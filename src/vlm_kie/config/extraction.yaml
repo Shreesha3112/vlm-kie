@@ -1,0 +1,78 @@
+# Invoice key information extraction schema and prompt templates
+
+fields:
+  invoice_number:
+    type: string
+    description: "Invoice or bill number/ID"
+    aliases: ["bill no", "invoice no", "document number", "ref no"]
+
+  invoice_date:
+    type: string
+    description: "Date the invoice was issued (ISO 8601 preferred: YYYY-MM-DD)"
+    aliases: ["date", "bill date", "issue date"]
+
+  vendor_name:
+    type: string
+    description: "Name of the company or individual issuing the invoice"
+    aliases: ["seller", "supplier", "from", "billed by"]
+
+  vendor_address:
+    type: string
+    description: "Full address of the vendor"
+    aliases: ["seller address", "supplier address"]
+
+  line_items:
+    type: array
+    description: "List of individual products or services billed"
+    item_schema:
+      description: string
+      quantity: number
+      unit_price: number
+      total: number
+
+  subtotal:
+    type: number
+    description: "Sum before taxes and fees"
+    aliases: ["sub total", "net amount", "amount before tax"]
+
+  tax:
+    type: number
+    description: "Tax amount (numeric, not percentage)"
+    aliases: ["vat", "gst", "tax amount", "sales tax"]
+
+  total:
+    type: number
+    description: "Final amount due including all taxes and fees"
+    aliases: ["total due", "amount due", "grand total", "total amount"]
+
+  currency:
+    type: string
+    description: "ISO 4217 currency code (e.g. USD, EUR, INR)"
+    aliases: ["currency code"]
+
+  payment_terms:
+    type: string
+    description: "Payment due date or terms (e.g. Net 30, Due on receipt)"
+    aliases: ["due date", "payment due", "terms"]
+
+
+prompt_templates:
+  default: |
+    You are a document information extraction assistant.
+    Extract the following fields from the invoice image and return a JSON object.
+
+    Required fields:
+    {field_list}
+
+    Rules:
+    - Return ONLY valid JSON, no markdown, no explanation.
+    - Use null for fields not found in the document.
+    - For numbers, return numeric values (not strings).
+    - For dates, use YYYY-MM-DD format when possible.
+    - For line_items, return an array of objects with keys: description, quantity, unit_price, total.
+
+    JSON output:
+
+  concise: |
+    Extract invoice fields as JSON. Fields: {field_names}.
+    Return null for missing fields. Numbers as numeric values. JSON only, no markdown.

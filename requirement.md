@@ -17,6 +17,14 @@ Input must be scanned document available online like non standard invoice.
 
 * Qwen VLM'S from smallest of 0.5/0.8b upto 7b
 
+**Qwen3.5 Ollama model candidates (all fit in 4GB VRAM):**
+
+| Tag           | Disk  | VRAM  | Context |
+|---------------|-------|-------|---------|
+| qwen3.5:0.8b  | 1.0GB | <2GB  | 256K    |
+| qwen3.5:2b    | 2.7GB | ~3GB  | 256K    |
+| qwen3.5:4b    | 3.4GB | ~4GB  | 256K    |
+
 
 ### End goal
 

@@ -1,0 +1,38 @@
+models:
+  # General VLMs via Ollama (auto-quantized, no manual quant needed)
+  - id: qwen3.5-0.8b
+    category: general
+    backend: qwen_ollama
+    ollama_tag: qwen3.5:0.8b
+    description: "Qwen3.5 0.8B via Ollama — <2GB VRAM"
+
+  - id: qwen3.5-2b
+    category: general
+    backend: qwen_ollama
+    ollama_tag: qwen3.5:2b
+    description: "Qwen3.5 2B via Ollama — ~3GB VRAM"
+
+  - id: qwen3.5-4b
+    category: general
+    backend: qwen_ollama
+    ollama_tag: qwen3.5:4b
+    description: "Qwen3.5 4B via Ollama — ~4GB VRAM"
+
+  # Document-specific VLMs via HuggingFace transformers
+  - id: glm-ocr
+    category: document
+    backend: glm_ocr
+    hf_id: zai-org/GLM-OCR
+    description: "GLM-OCR 0.9B — document-optimized, fp16 ~1.5GB VRAM"
+
+  - id: paddleocr-vl-1.5
+    category: document
+    backend: paddleocr_vl
+    hf_id: PaddlePaddle/PaddleOCR-VL-1.5
+    description: "PaddleOCR-VL-1.5 ~7B — 4-bit quantized via bitsandbytes"
+
+  - id: pp-chatocrv4
+    category: document
+    backend: pp_chatocrv4
+    requires_paddle: true
+    description: "PP-ChatOCRv4: PaddleX OCR + Qwen3.5-2b for structured extraction"
