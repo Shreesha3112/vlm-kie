@@ -47,38 +47,11 @@ class GLMOCRBackend(BaseVLM):
         self._model.eval()
         logger.info("GLM-OCR loaded.")
 
-    def _build_bbox_prompt(self, schema: dict[str, Any]) -> str:
-        """Build a GLM-OCR-specific prompt requesting value+bbox per field."""
-        fields = schema.get("fields", {})
-        scalar_fields = {k: v for k, v in fields.items() if k != "line_items"}
-        scalar_example = ", ".join(
-            f'"{k}": {{"value": <{v.get("type", "string")}>, "bbox": [x1, y1, x2, y2]}}'
-            for k, v in scalar_fields.items()
-        )
-        return (
-            "Extract all invoice fields from this document image. "
-            "For every field, return both its value and the bounding box [x1, y1, x2, y2] "
-            "(pixel coordinates, top-left to bottom-right) of the text region in the image.\n\n"
-            "Return a single valid JSON object in this exact format:\n"
-            "{\n"
-            f"  {scalar_example},\n"
-            '  "line_items": [\n'
-            "    {\n"
-            '      "description": {"value": <string>, "bbox": [x1, y1, x2, y2]},\n'
-            '      "quantity": {"value": <number>, "bbox": [x1, y1, x2, y2]},\n'
-            '      "unit_price": {"value": <number>, "bbox": [x1, y1, x2, y2]},\n'
-            '      "total": {"value": <number>, "bbox": [x1, y1, x2, y2]}\n'
-            "    }\n"
-            "  ]\n"
-            "}\n\n"
-            "Use null for missing fields. Return only valid JSON, no extra text."
-        )
-
     def extract(self, image: PILImage, schema: dict[str, Any]) -> str:
         if self._model is None:
             self.load()
 
-        prompt = self._build_bbox_prompt(schema)
+        prompt = self._build_json_prompt(schema)
 
         # GLM-OCR uses a conversational format with image + text
         messages = [

@@ -35,34 +35,19 @@ def _coerce_number(value: Any) -> float | None:
         return None
 
 
-def _extract_value_and_bbox(raw_val: Any) -> tuple[Any, list[float] | None]:
-    """Handle both plain values and {value, bbox} dicts from GLM-OCR."""
-    if isinstance(raw_val, dict) and "value" in raw_val:
-        return raw_val["value"], raw_val.get("bbox")
-    return raw_val, None
-
-
 def _parse_line_items(raw: Any) -> list[LineItem]:
-    """Parse line_items from raw JSON value, handling optional bbox dicts."""
+    """Parse line_items from raw JSON value."""
     if not isinstance(raw, list):
         return []
     items = []
     for entry in raw:
         if isinstance(entry, dict):
-            desc_val, desc_bbox = _extract_value_and_bbox(entry.get("description"))
-            qty_val, qty_bbox = _extract_value_and_bbox(entry.get("quantity"))
-            up_val, up_bbox = _extract_value_and_bbox(entry.get("unit_price"))
-            tot_val, tot_bbox = _extract_value_and_bbox(entry.get("total"))
-            row_bbox = next(
-                (b for b in [desc_bbox, qty_bbox, up_bbox, tot_bbox] if b), None
-            )
             items.append(
                 LineItem(
-                    description=desc_val,
-                    quantity=_coerce_number(qty_val),
-                    unit_price=_coerce_number(up_val),
-                    total=_coerce_number(tot_val),
-                    bbox=row_bbox,
+                    description=entry.get("description"),
+                    quantity=_coerce_number(entry.get("quantity")),
+                    unit_price=_coerce_number(entry.get("unit_price")),
+                    total=_coerce_number(entry.get("total")),
                 )
             )
     return items
@@ -94,18 +79,16 @@ def run_extraction(
             return result
 
         if isinstance(parsed, dict):
-            scalar_fields = [
-                "invoice_number", "invoice_date", "vendor_name", "vendor_address",
-                "subtotal", "tax", "total", "currency", "payment_terms",
-            ]
-            number_fields = {"subtotal", "tax", "total"}
-            for field in scalar_fields:
-                val, bbox = _extract_value_and_bbox(parsed.get(field))
-                coerced = _coerce_number(val) if field in number_fields else val
-                setattr(result, field, coerced)
-                if bbox:
-                    result.field_bboxes[field] = bbox
+            result.invoice_number = parsed.get("invoice_number")
+            result.invoice_date = parsed.get("invoice_date")
+            result.vendor_name = parsed.get("vendor_name")
+            result.vendor_address = parsed.get("vendor_address")
             result.line_items = _parse_line_items(parsed.get("line_items", []))
+            result.subtotal = _coerce_number(parsed.get("subtotal"))
+            result.tax = _coerce_number(parsed.get("tax"))
+            result.total = _coerce_number(parsed.get("total"))
+            result.currency = parsed.get("currency")
+            result.payment_terms = parsed.get("payment_terms")
         else:
             result.error = f"Expected JSON object, got {type(parsed).__name__}"
 

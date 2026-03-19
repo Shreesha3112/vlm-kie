@@ -14,7 +14,6 @@ class LineItem(BaseModel):
     quantity: float | None = None
     unit_price: float | None = None
     total: float | None = None
-    bbox: list[float] | None = None  # [x1, y1, x2, y2] per line item row
 
 
 class ExtractionResult(BaseModel):
@@ -34,9 +33,6 @@ class ExtractionResult(BaseModel):
     total: float | None = None
     currency: str | None = None
     payment_terms: str | None = None
-
-    # Bounding boxes for scalar fields (populated by GLM-OCR backend)
-    field_bboxes: dict[str, list[float]] = Field(default_factory=dict)
 
     # Raw output for debugging / re-parsing
     raw_output: str = ""
