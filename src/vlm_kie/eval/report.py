@@ -89,7 +89,7 @@ def write_comparison_md(run_dir: Path, df: pd.DataFrame) -> Path:
         "",
     ]
 
-    md_path.write_text("\n".join(lines))
+    md_path.write_text("\n".join(lines), encoding="utf-8")
     logger.info("Comparison report → %s", md_path)
     return md_path
 

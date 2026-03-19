@@ -64,9 +64,13 @@ class GLMOCRBackend(BaseVLM):
             }
         ]
 
-        inputs = self._processor.apply_chat_template(
+        text = self._processor.apply_chat_template(
             messages,
             add_generation_prompt=True,
+        )
+        inputs = self._processor(
+            text=text,
+            images=image,
             return_tensors="pt",
         ).to(self._model.device)
 
