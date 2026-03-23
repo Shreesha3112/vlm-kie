@@ -23,8 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 paddle = [
     "paddlepaddle>=3.0.0",
-    "paddleocr>=2.9.0",
-    "paddlex[ie,ocr]>=3.4.0",
+    "paddleocr[doc-parser,ie]>=3.4.0",
 ]
 dev = [
     "pytest>=8.0.0",

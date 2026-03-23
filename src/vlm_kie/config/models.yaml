@@ -36,3 +36,15 @@ models:
     backend: pp_chatocrv4
     requires_paddle: true
     description: "PP-ChatOCRv4: PaddleX OCR + Qwen3.5-2b for structured extraction"
+
+  - id: pp-ocr-v5
+    category: document
+    backend: pp_ocr_v5
+    requires_paddle: true
+    description: "PP-OCR V5: text detection + recognition (PaddleOCR 3.x default)"
+
+  - id: pp-structure-v3
+    category: document
+    backend: pp_structure_v3
+    requires_paddle: true
+    description: "PP-Structure V3: layout detection + OCR + table/formula recognition"

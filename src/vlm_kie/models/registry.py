@@ -58,6 +58,16 @@ def build_model(model_id: str) -> BaseVLM:
 
         return PPChatOCRv4Backend(model_id=cfg["id"])
 
+    elif backend == "pp_ocr_v5":
+        from vlm_kie.models.pp_ocr_v5 import PPOCRv5Backend  # noqa: PLC0415
+
+        return PPOCRv5Backend(model_id=cfg["id"])
+
+    elif backend == "pp_structure_v3":
+        from vlm_kie.models.pp_structure_v3 import PPStructureV3Backend  # noqa: PLC0415
+
+        return PPStructureV3Backend(model_id=cfg["id"])
+
     else:
         raise ValueError(f"Unknown backend: {backend!r}")
 

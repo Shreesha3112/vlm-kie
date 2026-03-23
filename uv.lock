@@ -1351,6 +1351,14 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/32/25/75a7aa8409d9a6ece6bd7ff9a896a25b75c5a78b2948d2119ab7a99db2f2/paddleocr-3.4.0-py3-none-any.whl", hash = "sha256:67b28a98c8ce58668473702fa22a6053d959df1105ec430a578280356b889ba1", size = 87786, upload-time = "2026-01-29T10:15:22.356Z" },
 ]
 
+[package.optional-dependencies]
+doc-parser = [
+    { name = "paddlex", extra = ["genai-client", "ocr"] },
+]
+ie = [
+    { name = "paddlex", extra = ["ie"] },
+]
+
 [[package]]
 name = "paddlepaddle"
 version = "3.3.0"
@@ -1405,6 +1413,9 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+genai-client = [
+    { name = "openai" },
+]
 ie = [
     { name = "ftfy" },
     { name = "imagesize" },
@@ -2652,9 +2663,8 @@ dev = [
     { name = "pytest-cov" },
 ]
 paddle = [
-    { name = "paddleocr" },
+    { name = "paddleocr", extra = ["doc-parser", "ie"] },
     { name = "paddlepaddle" },
-    { name = "paddlex", extra = ["ie", "ocr"] },
 ]
 
 [package.dev-dependencies]
@@ -2668,9 +2678,8 @@ requires-dist = [
     { name = "accelerate", specifier = ">=0.34.0" },
     { name = "datasets", specifier = ">=2.20.0" },
     { name = "ollama", specifier = ">=0.3.0" },
-    { name = "paddleocr", marker = "extra == 'paddle'", specifier = ">=2.9.0" },
+    { name = "paddleocr", extras = ["doc-parser", "ie"], marker = "extra == 'paddle'", specifier = ">=3.4.0" },
     { name = "paddlepaddle", marker = "extra == 'paddle'", specifier = ">=3.0.0" },
-    { name = "paddlex", extras = ["ie", "ocr"], marker = "extra == 'paddle'", specifier = ">=3.4.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
