@@ -56,7 +56,18 @@ def build_model(model_id: str) -> BaseVLM:
     elif backend == "pp_chatocrv4":
         from vlm_kie.models.pp_chatocrv4 import PPChatOCRv4Backend  # noqa: PLC0415
 
-        return PPChatOCRv4Backend(model_id=cfg["id"])
+        return PPChatOCRv4Backend(
+            model_id=cfg["id"],
+            llm_model_name=cfg.get("llm_model", "qwen2.5:7b"),
+            use_mllm=cfg.get("use_mllm", False),
+            mllm_model_name=cfg.get("mllm_model", "qwen2.5vl:7b"),
+            use_rag=cfg.get("use_rag", False),
+        )
+
+    elif backend == "pp_chatocrv4_hybrid":
+        from vlm_kie.models.pp_chatocrv4_hybrid import PPChatOCRv4HybridBackend  # noqa: PLC0415
+
+        return PPChatOCRv4HybridBackend(model_id=cfg["id"])
 
     elif backend == "pp_ocr_v5":
         from vlm_kie.models.pp_ocr_v5 import PPOCRv5Backend  # noqa: PLC0415

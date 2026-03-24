@@ -35,7 +35,13 @@ models:
     category: document
     backend: pp_chatocrv4
     requires_paddle: true
-    description: "PP-ChatOCRv4: PaddleX OCR + Qwen3.5-2b for structured extraction"
+    description: "PP-ChatOCRv4: real PaddleX PPChatOCRv4Doc pipeline (visual+RAG+MLLM+LLM via Ollama GPU)"
+
+  - id: pp-chatocrv4-hybrid
+    category: document
+    backend: pp_chatocrv4_hybrid
+    requires_paddle: true
+    description: "PP-ChatOCRv4-Hybrid (legacy): PaddleOCR + local Qwen2.5 (transformers) for structured extraction"
 
   - id: pp-ocr-v5
     category: document

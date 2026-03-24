@@ -1,7 +1,18 @@
-"""PP-ChatOCRv4 hybrid pipeline — PaddleX OCR + Qwen2.5 (transformers) for structured extraction."""
+"""Real PP-ChatOCRv4 pipeline — PaddleX PPChatOCRv4Doc with local LLM via Ollama.
+
+Architecture (all local, GPU-accelerated via Ollama):
+  1. PPChatOCRv4Doc  — visual layout analysis + OCR (PaddleX, CPU)
+  2. (Optional) MLLM — multimodal understanding via OpenAI-compatible local endpoint
+  3. (Optional) RAG  — vector retrieval via local embedding endpoint
+  4. LLM             — structured extraction via Ollama (GPU, OpenAI-compatible API)
+
+Requires: uv sync --extra paddle
+LLM/MLLM: Ollama must be running with the configured model(s).
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
@@ -13,152 +24,196 @@ from vlm_kie.models.base import BaseVLM
 
 logger = logging.getLogger(__name__)
 
-# Small text-only model for structuring OCR output; fits in ~2GB VRAM at fp16
-DEFAULT_QWEN_HF_ID = "Qwen/Qwen2.5-1.5B-Instruct"
+# Default endpoints — Ollama OpenAI-compatible API (GPU via Ollama)
+DEFAULT_LLM_BASE_URL = "http://localhost:11434/v1"
+DEFAULT_LLM_MODEL = "qwen2.5:7b"
+DEFAULT_MLLM_BASE_URL = "http://localhost:11434/v1"
+DEFAULT_MLLM_MODEL = "qwen2.5vl:7b"
+DEFAULT_EMBED_BASE_URL = "http://localhost:11434/v1"
+DEFAULT_EMBED_MODEL = "nomic-embed-text"
 
 
 class PPChatOCRv4Backend(BaseVLM):
-    """Hybrid pipeline:
-    1. PaddleX PP-ChatOCRv4-doc extracts raw OCR text from the image (CPU).
-    2. Qwen2.5-1.5B-Instruct (transformers, GPU) structures OCR text into JSON.
+    """Real PP-ChatOCRv4 pipeline using PaddleX PPChatOCRv4Doc.
 
-    Requires: uv sync --extra paddle
+    Stages:
+      1. visual_predict() — layout parsing + OCR + (optionally) table/seal recognition
+      2. build_vector()   — embed OCR chunks into a local vector store (optional, needs RAG)
+      3. mllm_pred()      — MLLM pass for visual understanding (optional)
+      4. chat()           — LLM-based key-value extraction with RAG context
+
+    LLM and MLLM are served locally via Ollama (GPU-accelerated).
+    Set use_mllm=True only if a multimodal Ollama model (e.g. qwen2.5vl:7b) is available.
+    Set use_rag=True only if an embedding Ollama model (e.g. nomic-embed-text) is available.
     """
 
-    def __init__(self, model_id: str, qwen_hf_id: str = DEFAULT_QWEN_HF_ID, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        model_id: str,
+        llm_base_url: str = DEFAULT_LLM_BASE_URL,
+        llm_model_name: str = DEFAULT_LLM_MODEL,
+        use_mllm: bool = False,
+        mllm_base_url: str = DEFAULT_MLLM_BASE_URL,
+        mllm_model_name: str = DEFAULT_MLLM_MODEL,
+        use_rag: bool = False,
+        embed_base_url: str = DEFAULT_EMBED_BASE_URL,
+        embed_model_name: str = DEFAULT_EMBED_MODEL,
+        paddle_device: str = "cpu",
+        **kwargs: Any,
+    ) -> None:
         self.model_id = model_id
-        self.qwen_hf_id = qwen_hf_id
+        self.llm_base_url = llm_base_url
+        self.llm_model_name = llm_model_name
+        self.use_mllm = use_mllm
+        self.mllm_base_url = mllm_base_url
+        self.mllm_model_name = mllm_model_name
+        self.use_rag = use_rag
+        self.embed_base_url = embed_base_url
+        self.embed_model_name = embed_model_name
+        self.paddle_device = paddle_device  # for PaddleX visual pipeline
         self._pipeline: Any = None
-        self._qwen_model: Any = None
-        self._qwen_tokenizer: Any = None
-        self._qwen_device: str = "cpu"
 
     def load(self) -> None:
-        # --- PaddleOCR engine (CPU to avoid VRAM conflict) ---
         try:
-            from paddleocr import PaddleOCR  # noqa: PLC0415
+            from paddleocr import PPChatOCRv4Doc  # noqa: PLC0415
         except ImportError as exc:
             raise ImportError(
-                "PaddleOCR not installed. Install with: uv sync --extra paddle"
+                "PaddleOCR not installed. Run: uv sync --extra paddle"
             ) from exc
 
-        logger.info("Initialising PaddleOCR on CPU...")
-        # device="cpu", enable_mkldnn=False avoids OneDNN PIR attribute bug in PaddlePaddle 3.x
-        self._pipeline = PaddleOCR(
-            lang="en",
-            use_textline_orientation=True,
-            device="cpu",
-            enable_mkldnn=False,
+        logger.info(
+            "Initialising PPChatOCRv4Doc visual pipeline on %s...", self.paddle_device
         )
-        logger.info("PaddleOCR ready.")
-
-        # --- Qwen text model via transformers (GPU if available) ---
-        import torch  # noqa: PLC0415
-        from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: PLC0415
-
-        self._qwen_device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info("Loading %s on %s for OCR structuring...", self.qwen_hf_id, self._qwen_device)
-
-        self._qwen_tokenizer = AutoTokenizer.from_pretrained(self.qwen_hf_id)
-        self._qwen_model = AutoModelForCausalLM.from_pretrained(
-            self.qwen_hf_id,
-            torch_dtype=torch.float16 if self._qwen_device == "cuda" else torch.float32,
-            device_map=self._qwen_device,
-        )
-        self._qwen_model.eval()
-        logger.info("Qwen text model loaded.")
+        self._pipeline = PPChatOCRv4Doc(device=self.paddle_device)
+        logger.info("PPChatOCRv4Doc visual pipeline ready.")
+        logger.info("LLM:  %s @ %s (GPU via Ollama)", self.llm_model_name, self.llm_base_url)
+        if self.use_mllm:
+            logger.info(
+                "MLLM: %s @ %s (GPU via Ollama)", self.mllm_model_name, self.mllm_base_url
+            )
+        if self.use_rag:
+            logger.info(
+                "RAG:  %s @ %s", self.embed_model_name, self.embed_base_url
+            )
 
     def extract(self, image: PILImage, schema: dict[str, Any]) -> str:
-        if self._pipeline is None or self._qwen_model is None:
+        if self._pipeline is None:
             self.load()
 
-        # Step 1: OCR text extraction via PaddleX
+        fields = schema.get("fields", {})
+        key_list = list(fields.keys()) if fields else ["content"]
+
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             image.save(tmp.name, format="PNG")
             tmp_path = tmp.name
 
         try:
-            result = self._pipeline.predict(tmp_path)
-            ocr_text = self._flatten_ocr_result(result)
+            return self._run_pipeline(tmp_path, key_list)
         finally:
             os.unlink(tmp_path)
 
-        logger.info("OCR extracted %d chars", len(ocr_text))
+    def predict_file(self, image_path: str, key_list: list[str]) -> dict[str, Any]:
+        """Run the full PP-ChatOCRv4 pipeline on a file path directly.
 
-        # Step 2: Structure OCR text into JSON via Qwen
-        fields = schema.get("fields", {})
-        field_names = ", ".join(fields.keys())
-        template = schema.get("prompt_templates", {}).get("default", "")
-
-        if template:
-            field_lines = [
-                f'  "{name}": ({meta.get("type","string")}) {meta.get("description","")}'
-                for name, meta in fields.items()
-            ]
-            prompt = template.format(
-                field_list="\n".join(field_lines),
-                field_names=field_names,
-            )
-        else:
-            prompt = f"Extract these invoice fields as JSON: {field_names}"
-
-        full_prompt = f"OCR extracted text from invoice:\n\n{ocr_text}\n\n{prompt}"
-
-        messages = [{"role": "user", "content": full_prompt}]
-        text = self._qwen_tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        inputs = self._qwen_tokenizer(text, return_tensors="pt").to(self._qwen_device)
-
-        import torch  # noqa: PLC0415
-
-        with torch.no_grad():
-            output_ids = self._qwen_model.generate(
-                **inputs,
-                max_new_tokens=1024,
-                do_sample=False,
-            )
-
-        input_len = inputs["input_ids"].shape[1]
-        generated = output_ids[0][input_len:]
-        return self._qwen_tokenizer.decode(generated, skip_special_tokens=True)
-
-    def _flatten_ocr_result(self, result: Any) -> str:
-        """Extract plain text from PaddleOCR 3.x result.
-
-        PaddleOCR.predict() returns a list of OCRResult objects (dict-like).
-        Each item has item["rec_texts"] — a list of recognized text strings.
+        Returns the raw chat_result dict from the pipeline.
         """
+        if self._pipeline is None:
+            self.load()
+        return self._run_pipeline_raw(image_path, key_list)
+
+    def _run_pipeline(self, image_path: str, key_list: list[str]) -> str:
+        result = self._run_pipeline_raw(image_path, key_list)
+        chat_res = result.get("chat_res", result)
         try:
-            texts: list[str] = []
-            for item in result:
-                if item is None:
-                    continue
-                # Dict-style access (OCRResult is a BaseCVResult subclass)
-                rec = item.get("rec_texts") if hasattr(item, "get") else None
-                if rec is None and isinstance(item, dict):
-                    rec = item.get("rec_texts")
-                if isinstance(rec, list):
-                    texts.extend(str(t) for t in rec if t)
-            if texts:
-                logger.debug("Extracted %d OCR text spans", len(texts))
-                return "\n".join(texts)
-            logger.warning("_flatten_ocr_result: no text found; raw result: %.300s", repr(result))
-            return str(result)
-        except Exception as exc:
-            logger.warning("_flatten_ocr_result exception: %s", exc)
-            return str(result)
+            return json.dumps(chat_res, ensure_ascii=False, indent=2)
+        except Exception:
+            return str(chat_res)
+
+    def _run_pipeline_raw(self, image_path: str, key_list: list[str]) -> dict[str, Any]:
+        # --- LLM config (Ollama, GPU) ---
+        chat_bot_config = {
+            "module_name": "chat_bot",
+            "model_name": self.llm_model_name,
+            "base_url": self.llm_base_url,
+            "api_type": "openai",
+            "api_key": "ollama",
+        }
+
+        # --- RAG retriever config ---
+        retriever_config: dict[str, Any] | None = None
+        if self.use_rag:
+            retriever_config = {
+                "module_name": "retriever",
+                "model_name": self.embed_model_name,
+                "base_url": self.embed_base_url,
+                "api_type": "openai",
+                "api_key": "ollama",
+            }
+
+        # --- Step 1: Visual prediction (layout + OCR) ---
+        logger.info("PP-ChatOCRv4 | Step 1: visual_predict(%s)", image_path)
+        visual_predict_res = self._pipeline.visual_predict(
+            input=image_path,
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_common_ocr=True,
+            use_seal_recognition=False,
+            use_table_recognition=True,
+        )
+        visual_info_list: list[Any] = []
+        for res in visual_predict_res:
+            visual_info_list.append(res["visual_info"])
+        logger.info("PP-ChatOCRv4 | visual_predict done: %d page(s)", len(visual_info_list))
+
+        # --- Step 2: (Optional) Build RAG vector index ---
+        vector_info = None
+        if self.use_rag and retriever_config is not None:
+            logger.info("PP-ChatOCRv4 | Step 2: build_vector (RAG)")
+            vector_info = self._pipeline.build_vector(
+                visual_info_list,
+                flag_save_bytes_vector=False,
+                retriever_config=retriever_config,
+            )
+            logger.info("PP-ChatOCRv4 | build_vector done")
+
+        # --- Step 3: (Optional) MLLM visual understanding ---
+        mllm_predict_info = None
+        if self.use_mllm:
+            mllm_config = {
+                "module_name": "chat_bot",
+                "model_name": self.mllm_model_name,
+                "base_url": self.mllm_base_url,
+                "api_type": "openai",
+                "api_key": "ollama",
+            }
+            logger.info(
+                "PP-ChatOCRv4 | Step 3: mllm_pred for keys: %s", key_list
+            )
+            mllm_res = self._pipeline.mllm_pred(
+                input=image_path,
+                key_list=key_list,
+                mllm_chat_bot_config=mllm_config,
+            )
+            mllm_predict_info = mllm_res.get("mllm_res")
+            logger.info("PP-ChatOCRv4 | mllm_pred done")
+
+        # --- Step 4: LLM chat extraction (GPU via Ollama) ---
+        logger.info(
+            "PP-ChatOCRv4 | Step 4: chat() with LLM=%s for keys: %s",
+            self.llm_model_name,
+            key_list,
+        )
+        chat_result = self._pipeline.chat(
+            key_list=key_list,
+            visual_info=visual_info_list,
+            vector_info=vector_info,
+            mllm_predict_info=mllm_predict_info,
+            chat_bot_config=chat_bot_config,
+            retriever_config=retriever_config,
+        )
+        logger.info("PP-ChatOCRv4 | chat() done: %s", chat_result)
+        return chat_result if isinstance(chat_result, dict) else {"chat_res": chat_result}
 
     def unload(self) -> None:
-        import torch  # noqa: PLC0415
-
         self._pipeline = None
-        del self._qwen_model
-        del self._qwen_tokenizer
-        self._qwen_model = None
-        self._qwen_tokenizer = None
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        logger.info("PP-ChatOCRv4 pipeline unloaded.")
+        logger.info("PPChatOCRv4 pipeline unloaded.")
