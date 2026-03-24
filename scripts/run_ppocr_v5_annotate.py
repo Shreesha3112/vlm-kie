@@ -57,11 +57,19 @@ def load_ocr():
         ) from exc
 
     logger.info("Initialising PP-OCR V5 on CPU …")
+    # Disable doc preprocessing so dt_polys are in original image coords.
+    # By default PaddleOCR's OCR.yaml enables use_doc_orientation_classify=True
+    # and use_doc_unwarping=True; those transforms shift pixel coords but the
+    # library does NOT inverse-transform them back, so drawing on the original
+    # image produces off-target boxes.
     ocr = PaddleOCR(
         lang="en",
         device="cpu",
         ocr_version="PP-OCRv5",
         enable_mkldnn=False,
+        use_doc_orientation_classify=False,
+        use_doc_unwarping=False,
+        use_textline_orientation=False,
     )
     logger.info("PP-OCR V5 ready.")
     return ocr

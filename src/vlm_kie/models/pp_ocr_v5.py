@@ -33,11 +33,17 @@ class PPOCRv5Backend(BaseVLM):
             ) from exc
 
         logger.info("Initialising PP-OCR V5 on CPU...")
+        # Disable doc preprocessing: OCR.yaml defaults these to True, but the
+        # pipeline returns dt_polys in preprocessed-image coords without
+        # inverse-transforming them, so annotations on the original image are off.
         self._ocr = PaddleOCR(
             lang="en",
             device="cpu",
             ocr_version="PP-OCRv5",
             enable_mkldnn=False,
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
         )
         logger.info("PP-OCR V5 ready.")
 
