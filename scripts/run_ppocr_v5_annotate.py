@@ -38,7 +38,7 @@ SAMPLES_ROOT = REPO_ROOT / "src" / "vlm_kie" / "data" / "samples"
 OUTPUT_ROOT = REPO_ROOT / "outputs" / "ppocr_v5_annotated"
 
 SAMPLE_DIRS = [
-     SAMPLES_ROOT / "test_sample",
+    SAMPLES_ROOT / "test_sample",
     #SAMPLES_ROOT / "cord-v2",
     #SAMPLES_ROOT / "doc_samples",
 ]
@@ -165,34 +165,42 @@ def _get_font(size: int = 14):
             return ImageFont.load_default()
 
 
-def annotate_image(image: Image.Image, records: list[dict]) -> Image.Image:
-    """Draw bounding boxes + labels on a copy of *image*."""
+def annotate_image(
+    image: Image.Image,
+    records: list[dict],
+    show_labels: bool = False,
+) -> Image.Image:
+    """Draw bounding boxes on a copy of *image*.
+
+    Args:
+        image: Source image.
+        records: OCR records from extract_bbox_data().
+        show_labels: If True, overlay text + score labels on each box.
+                     Defaults to False (clean bbox-only view).
+    """
     img = image.convert("RGB").copy()
     draw = ImageDraw.Draw(img, "RGBA")
-    font = _get_font(max(12, img.height // 80))
+    font = _get_font(max(12, img.height // 80)) if show_labels else None
 
     for idx, rec in enumerate(records):
         color = COLORS[idx % len(COLORS)]
-        text = rec["text"]
-        score = rec["score"]
 
         polygon = rec.get("polygon")
         bbox = rec.get("bbox")
 
         if polygon is not None and len(polygon) >= 3:
-            # Draw filled semi-transparent polygon
             flat = [float(coord) for pt in polygon for coord in pt]
             draw.polygon(flat, outline=color, fill=color + "33")
         elif bbox:
             x1, y1, x2, y2 = [float(v) for v in bbox]
             draw.rectangle([x1, y1, x2, y2], outline=color, width=2, fill=color + "22")
 
-        # Label
-        if bbox:
+        if show_labels and bbox:
+            text = rec["text"]
+            score = rec["score"]
             label = f"{text[:30]} ({score:.2f})"
             x1, y1 = float(bbox[0]), float(bbox[1])
             tx, ty = max(0, x1), max(0, y1 - 16)
-            # Background for label
             try:
                 bb = font.getbbox(label)
                 tw, th = bb[2] - bb[0], bb[3] - bb[1]
